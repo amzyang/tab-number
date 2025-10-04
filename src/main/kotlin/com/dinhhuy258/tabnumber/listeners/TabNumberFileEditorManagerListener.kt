@@ -22,17 +22,28 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
     private val windowListeners: MutableMap<EditorWindow, TabsListener> = ConcurrentHashMap()
     private val log: Logger = Logger.getInstance("TabNumber")
 
+    // 防抖：记录最后一次刷新请求的时间
+    @Volatile
+    private var lastRefreshTime: Long = 0
+    private val debounceMillis: Long = 50 // 50ms 防抖间隔
+
     override fun fileOpened(
         source: FileEditorManager,
         file: VirtualFile,
     ) {
-        // 立即刷新
+        // 立即刷新一次
         refreshTabNumber()
 
-        // 延迟再次刷新，确保 Split 等异步操作完成后窗口状态稳定
+        // 延迟再次刷新，确保 Split Right 等异步窗口创建操作完成
+        // 使用较短的延迟以减少用户感知的闪烁
         ApplicationManager.getApplication().invokeLater(
             {
-                refreshTabNumber()
+                val currentTime = System.currentTimeMillis()
+                // 防抖：避免在短时间内重复刷新
+                if (currentTime - lastRefreshTime > debounceMillis) {
+                    refreshTabNumber()
+                    lastRefreshTime = currentTime
+                }
             },
             { project.isDisposed },
         )
@@ -60,11 +71,26 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
         }
 
         try {
+            // 更新刷新时间戳
+            lastRefreshTime = System.currentTimeMillis()
+
             // 清理已失效的窗口监听器
             cleanupDisposedWindows()
 
             // 遍历所有编辑器窗口
             val windows = fileEditorManagerEx.windows
+
+            // 检测新窗口并立即为其设置监听器
+            // 这对于 Split Right 等操作很重要，因为它们可能不触发 fileOpened
+            for (window in windows) {
+                if (!windowListeners.containsKey(window) && !window.isDisposed) {
+                    // 发现新窗口，立即为其添加监听器和刷新标签
+                    log.info("Detected new editor window, adding listener")
+                    refreshWindowTabNumbers(window)
+                }
+            }
+
+            // 刷新所有窗口的标签
             for (window in windows) {
                 refreshWindowTabNumbers(window)
             }
@@ -96,6 +122,7 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
                 val listener =
                     object : TabsListener {
                         override fun tabsMoved() {
+                            // 标签移动后立即刷新
                             refreshWindowTabNumbers(window)
                         }
 
@@ -104,11 +131,27 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
                             newSelection: TabInfo?,
                         ) {
                             super.selectionChanged(oldSelection, newSelection)
-                            refreshWindowTabNumbers(window)
+                            // 选择变化可能伴随窗口切换，刷新所有窗口
+                            ApplicationManager.getApplication().invokeLater(
+                                {
+                                    refreshTabNumber()
+                                },
+                                { project.isDisposed },
+                            )
                         }
 
                         override fun tabRemoved(tabToRemove: TabInfo) {
                             super.tabRemoved(tabToRemove)
+                            // 标签移除后刷新该窗口
+                            refreshWindowTabNumbers(window)
+                        }
+
+                        override fun beforeSelectionChanged(
+                            oldSelection: TabInfo?,
+                            newSelection: TabInfo?,
+                        ) {
+                            super.beforeSelectionChanged(oldSelection, newSelection)
+                            // 选择前预刷新，确保标签显示正确
                             refreshWindowTabNumbers(window)
                         }
                     }
