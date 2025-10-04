@@ -26,7 +26,16 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
         source: FileEditorManager,
         file: VirtualFile,
     ) {
+        // 立即刷新
         refreshTabNumber()
+
+        // 延迟再次刷新，确保 Split 等异步操作完成后窗口状态稳定
+        ApplicationManager.getApplication().invokeLater(
+            {
+                refreshTabNumber()
+            },
+            { project.isDisposed },
+        )
     }
 
     override fun fileClosed(
