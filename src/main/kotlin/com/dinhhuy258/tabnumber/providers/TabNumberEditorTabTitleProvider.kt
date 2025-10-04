@@ -19,7 +19,7 @@ class TabNumberEditorTabTitleProvider : EditorTabTitleProvider {
         try {
             val fileEditorManagerEx = FileEditorManagerEx.getInstanceEx(project)
             val currentWindow: EditorWindow = fileEditorManagerEx.currentWindow ?: return null
-            val files = currentWindow.files
+            val files = currentWindow.fileList
 
             for (index in files.indices) {
                 if (files[index] == file) {

@@ -3,6 +3,8 @@ local.properties
 .gradle
 build/
 
+# IntelliJ Platform Cache
+.intellijPlatform
 
 # Intellij
 .idea

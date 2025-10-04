@@ -89,13 +89,15 @@ class TabNumberFileEditorManagerListener(private val project: Project) : FileEdi
             }
 
             // 更新所有标签的编号
-            val files = window.files
+            val files = window.fileList
             for (index in files.indices) {
                 val tabInfo = tabs.getTabAt(index)
                 if (tabInfo != null) {
-                    tabInfo.text = (index + 1).toString() +
-                        tabNumberSettingState.tabNumberSeparator +
-                        files[index].presentableName
+                    tabInfo.setText(
+                        (index + 1).toString() +
+                            tabNumberSettingState.tabNumberSeparator +
+                            files[index].presentableName
+                    )
                 }
             }
         } catch (e: Exception) {
