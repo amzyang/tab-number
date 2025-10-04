@@ -31,19 +31,32 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
         source: FileEditorManager,
         file: VirtualFile,
     ) {
-        // 立即刷新一次
+        log.info("File opened: ${file.name}")
+
+        // 立即刷新，修正 getEditorTabTitle() 可能返回的不准确编号
         refreshTabNumber()
 
-        // 延迟再次刷新，确保 Split Right 等异步窗口创建操作完成
-        // 使用较短的延迟以减少用户感知的闪烁
+        // 第一次延迟刷新（处理异步标签创建）
         ApplicationManager.getApplication().invokeLater(
             {
-                val currentTime = System.currentTimeMillis()
-                // 防抖：避免在短时间内重复刷新
-                if (currentTime - lastRefreshTime > debounceMillis) {
-                    refreshTabNumber()
-                    lastRefreshTime = currentTime
-                }
+                refreshTabNumber()
+            },
+            { project.isDisposed },
+        )
+
+        // 第二次延迟刷新（处理 Split 等复杂操作）
+        ApplicationManager.getApplication().invokeLater(
+            {
+                ApplicationManager.getApplication().invokeLater(
+                    {
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastRefreshTime > debounceMillis) {
+                            refreshTabNumber()
+                            lastRefreshTime = currentTime
+                        }
+                    },
+                    { project.isDisposed },
+                )
             },
             { project.isDisposed },
         )
@@ -129,7 +142,16 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
                 log.info("Before file opened: ${file.name}")
 
                 // 立即刷新，为新标签准备环境
+                // 这样当 getEditorTabTitle() 被调用时，窗口状态是最新的
                 refreshTabNumber()
+
+                // 延迟刷新，确保标签创建后立即更新
+                ApplicationManager.getApplication().invokeLater(
+                    {
+                        refreshTabNumber()
+                    },
+                    { project.isDisposed },
+                )
             }
 
             override fun beforeFileClosed(

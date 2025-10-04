@@ -1,6 +1,8 @@
 package com.dinhhuy258.tabnumber.providers
 
+import com.dinhhuy258.tabnumber.utils.TabTitleUtils
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.fileEditor.impl.EditorTabTitleProvider
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
@@ -14,14 +16,22 @@ class TabNumberEditorTabTitleProvider : EditorTabTitleProvider {
         project: Project,
         file: VirtualFile,
     ): String? {
-        // 在多窗口场景下，EditorTabTitleProvider 无法区分是哪个窗口在请求标题
-        // 返回 null，完全由 TabNumberFileEditorManagerListener.refreshTabNumber()
-        // 通过 TabInfo.setText() 来设置每个窗口的正确编号
-        //
-        // 这样可以确保：
-        // 1. 启动时所有标签显示正确编号（通过 StartupActivity 的 refreshTabNumber）
-        // 2. 多窗口/分屏场景下每个窗口独立编号
-        // 3. 同一文件在不同窗口显示不同编号
+        try {
+            val fileEditorManagerEx = FileEditorManagerEx.getInstanceEx(project)
+            val currentWindow = fileEditorManagerEx.currentWindow ?: return null
+
+            // 优先使用 currentWindow 提供初始编号
+            // 这样新打开的文件立即显示编号（即使在多窗口场景下可能不准确）
+            // refreshTabNumber() 会随后修正所有窗口的编号
+            val files = currentWindow.fileList
+            val index = files.indexOf(file)
+            if (index >= 0) {
+                return TabTitleUtils.generateTabTitle(index, file)
+            }
+        } catch (e: Exception) {
+            log.warn("Error getting editor tab title for file: ${file.name}", e)
+        }
+
         return null
     }
 }
