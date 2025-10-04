@@ -112,6 +112,31 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
         windowListeners.clear()
     }
 
+    /**
+     * 创建 Before 监听器，处理文件打开/关闭之前的事件
+     * beforeFileOpened 在标签页创建之前触发，可以预初始化窗口状态
+     */
+    fun createBeforeListener(): FileEditorManagerListener.Before =
+        object : FileEditorManagerListener.Before {
+            override fun beforeFileOpened(
+                source: FileEditorManager,
+                file: VirtualFile,
+            ) {
+                // 文件打开前预刷新，确保窗口监听器已设置
+                log.info("Before file opened: ${file.name}")
+
+                // 立即刷新，为新标签准备环境
+                refreshTabNumber()
+            }
+
+            override fun beforeFileClosed(
+                source: FileEditorManager,
+                file: VirtualFile,
+            ) {
+                // 文件关闭前不需要特殊处理，fileClosed 会处理
+            }
+        }
+
     private fun refreshWindowTabNumbers(window: EditorWindow) {
         try {
             val tabbedPane = window.tabbedPane ?: return

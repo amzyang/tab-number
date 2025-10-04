@@ -14,10 +14,19 @@ class TabNumberStartupActivity : StartupActivity {
         // 将 listener 注册为项目的 Disposable 子对象，项目关闭时自动 dispose
         Disposer.register(project, listener)
 
-        // 将连接绑定到项目生命周期，项目关闭时自动断开
-        project.messageBus.connect(project).subscribe(
+        val connection = project.messageBus.connect(project)
+
+        // 订阅常规文件编辑器事件（异步）
+        connection.subscribe(
             FileEditorManagerListener.FILE_EDITOR_MANAGER,
             listener,
+        )
+
+        // 订阅 Before 事件（文件打开/关闭之前）
+        // 这些事件在标签创建前触发，可以预初始化状态
+        connection.subscribe(
+            FileEditorManagerListener.Before.FILE_EDITOR_MANAGER,
+            listener.createBeforeListener(),
         )
 
         // 在 EDT 线程中主动刷新已打开的标签
