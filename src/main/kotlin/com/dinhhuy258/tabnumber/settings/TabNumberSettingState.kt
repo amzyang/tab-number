@@ -1,9 +1,9 @@
 package com.dinhhuy258.tabnumber.settings
 
 import com.intellij.openapi.components.PersistentStateComponent
-import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
+import com.intellij.openapi.components.service
 import com.intellij.util.xmlb.XmlSerializerUtil
 
 @State(
@@ -14,9 +14,7 @@ class TabNumberSettingState : PersistentStateComponent<TabNumberSettingState> {
     companion object {
         const val DEFAULT_TAB_NUMBER_SEPARATOR = ". "
 
-        fun getInstance(): TabNumberSettingState {
-            return ServiceManager.getService(TabNumberSettingState::class.java)
-        }
+        fun getInstance(): TabNumberSettingState = service()
     }
 
     var tabNumberSeparator = DEFAULT_TAB_NUMBER_SEPARATOR

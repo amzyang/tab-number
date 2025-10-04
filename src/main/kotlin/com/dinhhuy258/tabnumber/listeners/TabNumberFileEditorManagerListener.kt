@@ -1,6 +1,7 @@
 package com.dinhhuy258.tabnumber.listeners
 
-import com.dinhhuy258.tabnumber.settings.TabNumberSettingState
+import com.dinhhuy258.tabnumber.utils.TabTitleUtils
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -12,11 +13,13 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.tabs.TabInfo
 import com.intellij.ui.tabs.TabsListener
+import java.util.concurrent.ConcurrentHashMap
 
-class TabNumberFileEditorManagerListener(private val project: Project) : FileEditorManagerListener {
-    private val tabNumberSettingState: TabNumberSettingState = TabNumberSettingState.getInstance()
+class TabNumberFileEditorManagerListener(private val project: Project) :
+    FileEditorManagerListener,
+    Disposable {
     private val fileEditorManagerEx: FileEditorManagerEx = FileEditorManagerEx.getInstanceEx(project)
-    private val windowListeners: MutableMap<EditorWindow, TabsListener> = mutableMapOf()
+    private val windowListeners: MutableMap<EditorWindow, TabsListener> = ConcurrentHashMap()
     private val log: Logger = Logger.getInstance("TabNumber")
 
     override fun fileOpened(
@@ -48,6 +51,9 @@ class TabNumberFileEditorManagerListener(private val project: Project) : FileEdi
         }
 
         try {
+            // 清理已失效的窗口监听器
+            cleanupDisposedWindows()
+
             // 遍历所有编辑器窗口
             val windows = fileEditorManagerEx.windows
             for (window in windows) {
@@ -56,6 +62,19 @@ class TabNumberFileEditorManagerListener(private val project: Project) : FileEdi
         } catch (e: Exception) {
             log.error("Error refreshing tab numbers", e)
         }
+    }
+
+    private fun cleanupDisposedWindows() {
+        val disposedWindows = windowListeners.keys.filter { it.isDisposed }
+        disposedWindows.forEach { window ->
+            windowListeners.remove(window)
+        }
+    }
+
+    override fun dispose() {
+        // 清理所有窗口监听器引用
+        // 注意：IntelliJ Platform 2024.3+ 的 JBTabs 监听器通过弱引用管理，无需手动移除
+        windowListeners.clear()
     }
 
     private fun refreshWindowTabNumbers(window: EditorWindow) {
@@ -91,14 +110,7 @@ class TabNumberFileEditorManagerListener(private val project: Project) : FileEdi
             // 更新所有标签的编号
             val files = window.fileList
             for (index in files.indices) {
-                val tabInfo = tabs.getTabAt(index)
-                if (tabInfo != null) {
-                    tabInfo.setText(
-                        (index + 1).toString() +
-                            tabNumberSettingState.tabNumberSeparator +
-                            files[index].presentableName
-                    )
-                }
+                tabs.getTabAt(index)?.setText(TabTitleUtils.generateTabTitle(index, files[index]))
             }
         } catch (e: Exception) {
             log.error("Error refreshing tab numbers for window", e)
