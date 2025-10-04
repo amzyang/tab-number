@@ -60,6 +60,25 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
             },
             { project.isDisposed },
         )
+
+        // 第三次延迟刷新（确保所有窗口完全初始化）
+        // 某些情况下，新窗口的创建可能比预期更慢
+        ApplicationManager.getApplication().invokeLater(
+            {
+                ApplicationManager.getApplication().invokeLater(
+                    {
+                        ApplicationManager.getApplication().invokeLater(
+                            {
+                                refreshTabNumber()
+                            },
+                            { project.isDisposed },
+                        )
+                    },
+                    { project.isDisposed },
+                )
+            },
+            { project.isDisposed },
+        )
     }
 
     override fun fileClosed(
@@ -94,6 +113,18 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
             val windows = fileEditorManagerEx.windows
             log.info("Refreshing tab numbers for ${windows.size} window(s)")
 
+            // 如果没有窗口，可能是初始化尚未完成
+            if (windows.isEmpty()) {
+                log.info("No windows found, scheduling delayed refresh")
+                ApplicationManager.getApplication().invokeLater(
+                    {
+                        refreshTabNumber()
+                    },
+                    { project.isDisposed },
+                )
+                return
+            }
+
             // 检测新窗口并立即为其设置监听器
             // 这对于 Split Right 等操作很重要，因为它们可能不触发 fileOpened
             for (window in windows) {
@@ -109,6 +140,15 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
                 val fileCount = window.fileList.size
                 log.info("Refreshing window $windowIndex with $fileCount file(s)")
                 refreshWindowTabNumbers(window)
+            }
+
+            // 强制触发 UI 更新
+            // 某些情况下，即使设置了文本，UI 也可能不会立即更新
+            for (window in windows) {
+                window.tabbedPane?.tabs?.component?.let { component ->
+                    component.revalidate()
+                    component.repaint()
+                }
             }
         } catch (e: Exception) {
             log.error("Error refreshing tab numbers", e)
@@ -141,14 +181,29 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
                 // 文件打开前预刷新，确保窗口监听器已设置
                 log.info("Before file opened: ${file.name}")
 
-                // 立即刷新，为新标签准备环境
-                // 这样当 getEditorTabTitle() 被调用时，窗口状态是最新的
+                // 由于 TabNumberEditorTabTitleProvider 现在返回 null
+                // 我们需要在标签创建后立即刷新以添加编号
+
+                // 立即刷新当前状态
                 refreshTabNumber()
 
-                // 延迟刷新，确保标签创建后立即更新
+                // 第一次延迟刷新，标签创建后立即更新
                 ApplicationManager.getApplication().invokeLater(
                     {
                         refreshTabNumber()
+                    },
+                    { project.isDisposed },
+                )
+
+                // 第二次延迟刷新，处理异步创建的标签
+                ApplicationManager.getApplication().invokeLater(
+                    {
+                        ApplicationManager.getApplication().invokeLater(
+                            {
+                                refreshTabNumber()
+                            },
+                            { project.isDisposed },
+                        )
                     },
                     { project.isDisposed },
                 )
@@ -181,7 +236,9 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
                             newSelection: TabInfo?,
                         ) {
                             super.selectionChanged(oldSelection, newSelection)
-                            // 选择变化可能伴随窗口切换，刷新所有窗口
+                            // 选择变化可能伴随窗口切换或分屏操作，立即刷新
+                            refreshWindowTabNumbers(window)
+                            // 也刷新所有窗口以防万一
                             ApplicationManager.getApplication().invokeLater(
                                 {
                                     refreshTabNumber()

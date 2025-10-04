@@ -30,14 +30,40 @@ class TabNumberStartupActivity : StartupActivity {
         )
 
         // 在 EDT 线程中主动刷新已打开的标签
-        // 使用多次延迟刷新确保启动时所有窗口和标签都已完全初始化
+        // 由于 TabNumberEditorTabTitleProvider 现在返回 null
+        // 我们必须确保启动时所有标签都能立即获得编号
         ApplicationManager.getApplication().invokeLater {
+            // 第一次刷新
             listener.refreshTabNumber()
 
-            // 第二次延迟刷新，确保所有标签都已创建
+            // 快速连续刷新，确保所有标签都获得编号
             ApplicationManager.getApplication().invokeLater(
                 {
                     listener.refreshTabNumber()
+
+                    // 第三次刷新
+                    ApplicationManager.getApplication().invokeLater(
+                        {
+                            listener.refreshTabNumber()
+
+                            // 第四次刷新，处理延迟加载的窗口
+                            ApplicationManager.getApplication().invokeLater(
+                                {
+                                    listener.refreshTabNumber()
+
+                                    // 最后一次刷新，确保所有异步操作完成
+                                    ApplicationManager.getApplication().invokeLater(
+                                        {
+                                            listener.refreshTabNumber()
+                                        },
+                                        { project.isDisposed },
+                                    )
+                                },
+                                { project.isDisposed },
+                            )
+                        },
+                        { project.isDisposed },
+                    )
                 },
                 { project.isDisposed },
             )

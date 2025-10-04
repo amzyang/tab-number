@@ -16,22 +16,10 @@ class TabNumberEditorTabTitleProvider : EditorTabTitleProvider {
         project: Project,
         file: VirtualFile,
     ): String? {
-        try {
-            val fileEditorManagerEx = FileEditorManagerEx.getInstanceEx(project)
-            val currentWindow = fileEditorManagerEx.currentWindow ?: return null
-
-            // 优先使用 currentWindow 提供初始编号
-            // 这样新打开的文件立即显示编号（即使在多窗口场景下可能不准确）
-            // refreshTabNumber() 会随后修正所有窗口的编号
-            val files = currentWindow.fileList
-            val index = files.indexOf(file)
-            if (index >= 0) {
-                return TabTitleUtils.generateTabTitle(index, file)
-            }
-        } catch (e: Exception) {
-            log.warn("Error getting editor tab title for file: ${file.name}", e)
-        }
-
+        // 返回 null，让 TabNumberFileEditorManagerListener.refreshWindowTabNumbers
+        // 来处理所有标签编号的更新
+        // 这样可以确保每个窗口的编号是独立且正确的
+        // TabNumberFileEditorManagerListener 会在文件打开、窗口创建等事件时立即刷新编号
         return null
     }
 }
