@@ -7,8 +7,8 @@ import com.intellij.openapi.components.Storage
 import com.intellij.util.xmlb.XmlSerializerUtil
 
 @State(
-        name = "com.dinhhuy258.tabnumber.settings.TabNumberSettingState",
-        storages = [Storage("TabNumberPlugin.xml")]
+    name = "com.dinhhuy258.tabnumber.settings.TabNumberSettingState",
+    storages = [Storage("TabNumberPlugin.xml")],
 )
 class TabNumberSettingState : PersistentStateComponent<TabNumberSettingState> {
     companion object {
