@@ -1,8 +1,6 @@
 package com.dinhhuy258.tabnumber.providers
 
-import com.dinhhuy258.tabnumber.utils.TabTitleUtils
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.fileEditor.impl.EditorTabTitleProvider
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
@@ -16,42 +14,14 @@ class TabNumberEditorTabTitleProvider : EditorTabTitleProvider {
         project: Project,
         file: VirtualFile,
     ): String? {
-        try {
-            val fileEditorManagerEx = FileEditorManagerEx.getInstanceEx(project)
-            val currentWindow = fileEditorManagerEx.currentWindow
-            val allWindows = fileEditorManagerEx.windows
-
-            // 策略1: 优先使用 currentWindow（新打开/Split 的文件通常在这里）
-            if (currentWindow != null) {
-                val files = currentWindow.fileList
-                val index = files.indexOf(file)
-                if (index >= 0) {
-                    return TabTitleUtils.generateTabTitle(index, file)
-                }
-            }
-
-            // 策略2: 文件不在 currentWindow，遍历所有窗口
-            // 选择文件数最少的窗口（Split 后的新窗口通常文件较少）
-            var bestIndex = -1
-            var minFileCount = Int.MAX_VALUE
-
-            for (window in allWindows) {
-                val files = window.fileList
-                val index = files.indexOf(file)
-                if (index >= 0 && files.size < minFileCount) {
-                    bestIndex = index
-                    minFileCount = files.size
-                }
-            }
-
-            if (bestIndex >= 0) {
-                return TabTitleUtils.generateTabTitle(bestIndex, file)
-            }
-        } catch (e: Exception) {
-            log.warn("Error getting editor tab title for file: ${file.name}", e)
-        }
-
-        // 降级：返回 null 让 IntelliJ 使用默认标题
+        // 在多窗口场景下，EditorTabTitleProvider 无法区分是哪个窗口在请求标题
+        // 返回 null，完全由 TabNumberFileEditorManagerListener.refreshTabNumber()
+        // 通过 TabInfo.setText() 来设置每个窗口的正确编号
+        //
+        // 这样可以确保：
+        // 1. 启动时所有标签显示正确编号（通过 StartupActivity 的 refreshTabNumber）
+        // 2. 多窗口/分屏场景下每个窗口独立编号
+        // 3. 同一文件在不同窗口显示不同编号
         return null
     }
 }

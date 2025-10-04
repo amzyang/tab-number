@@ -79,6 +79,7 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
 
             // 遍历所有编辑器窗口
             val windows = fileEditorManagerEx.windows
+            log.info("Refreshing tab numbers for ${windows.size} window(s)")
 
             // 检测新窗口并立即为其设置监听器
             // 这对于 Split Right 等操作很重要，因为它们可能不触发 fileOpened
@@ -91,7 +92,9 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
             }
 
             // 刷新所有窗口的标签
-            for (window in windows) {
+            for ((windowIndex, window) in windows.withIndex()) {
+                val fileCount = window.fileList.size
+                log.info("Refreshing window $windowIndex with $fileCount file(s)")
                 refreshWindowTabNumbers(window)
             }
         } catch (e: Exception) {
@@ -182,12 +185,18 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
                     }
                 tabs.addListener(listener)
                 windowListeners[window] = listener
+                log.info("Added TabsListener for window")
             }
 
             // 更新所有标签的编号
             val files = window.fileList
             for (index in files.indices) {
-                tabs.getTabAt(index)?.setText(TabTitleUtils.generateTabTitle(index, files[index]))
+                val file = files[index]
+                val newTitle = TabTitleUtils.generateTabTitle(index, file)
+                tabs.getTabAt(index)?.also { tabInfo ->
+                    tabInfo.setText(newTitle)
+                    log.info("Set tab $index: $newTitle")
+                }
             }
         } catch (e: Exception) {
             log.error("Error refreshing tab numbers for window", e)
