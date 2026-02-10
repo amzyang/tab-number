@@ -4,211 +4,81 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-Tab Number 是一个 IntelliJ IDEA 插件,为编辑器标签页添加数字前缀,方便快速识别和切换。
+Tab Number 是一个 IntelliJ IDEA 插件，为编辑器标签页添加数字前缀（如 `1. Main.kt`），方便快速识别和切换。
 
 ## 技术栈
 
 - **语言**: Kotlin 2.0.21
-- **构建工具**: Gradle 8.10.2 with IntelliJ Platform Gradle Plugin 2.9.0
+- **构建工具**: Gradle 8.10.2 + IntelliJ Platform Gradle Plugin 2.9.0
 - **目标平台**: IntelliJ IDEA 2024.3+ (build 243+)
 - **代码规范**: ktlint 12.1.0
-- **JVM 要求**: Java 21 (通过 Gradle Toolchain 自动下载)
-
-## 核心架构
-
-### 插件入口流程
-
-1. **启动阶段** (`TabNumberStartupActivity`)
-   - 实现 `StartupActivity` 接口,在项目启动时执行
-   - 订阅 `FileEditorManagerListener.FILE_EDITOR_MANAGER` 消息总线
-   - 注册 `TabNumberFileEditorManagerListener` 监听器
-
-2. **标签标题提供** (`TabNumberEditorTabTitleProvider`)
-   - 实现 `EditorTabTitleProvider` 接口
-   - IntelliJ 调用 `getEditorTabTitle()` 获取自定义标签标题
-   - 计算文件在当前编辑器窗口中的索引位置
-   - 返回格式: `{索引+1}{分隔符}{文件名}`
-
-3. **事件监听与刷新** (`TabNumberFileEditorManagerListener`)
-   - 监听文件打开、关闭、选择变化事件
-   - 监听标签页移动、移除事件(通过 `TabsListener`)
-   - 调用 `refreshTabNumber()` 遍历所有编辑器窗口并动态更新标签
-   - 为每个窗口维护独立的 `TabsListener`，存储在 `windowListeners` Map 中
-   - **线程安全**: 确保所有 UI 操作在 EDT 线程中执行
-
-### 设置持久化
-
-- `TabNumberSettingState`: 使用 IntelliJ 的 `PersistentStateComponent` 持久化设置
-- 配置存储于 `TabNumberPlugin.xml`
-- `TabNumberSettingConfigurable` + `TabNumberSettingComponent`: 提供设置 UI(Editor 设置下)
+- **JVM**: Java 21（Gradle 通过 Foojay Toolchain Resolver 自动下载，本地有 Java 17+ 即可）
 
 ## 常用命令
 
-### 构建与运行
-
 ```bash
-# 构建插件（使用任意 Java 17+ 版本，Gradle 会自动下载 Java 21）
-./gradlew build
-
-# 运行插件(启动带插件的 IDE 实例)
-./gradlew runIde
-
-# 代码格式检查
-./gradlew ktlintCheck
-
-# 自动格式化代码
-./gradlew ktlintFormat
-
-# 构建可分发的插件 zip
-./gradlew buildPlugin
-
-# 清理构建
-./gradlew clean
+./gradlew build              # 构建插件
+./gradlew runIde             # 启动带插件的 IDE 实例（可在原 IDE 中断点调试）
+./gradlew ktlintCheck        # 代码格式检查
+./gradlew ktlintFormat       # 自动格式化代码
+./gradlew buildPlugin        # 构建可分发的插件 zip
+./gradlew clean              # 清理构建
 ```
 
-**重要**:
-- Gradle 会通过 Foojay Toolchain Resolver 自动下载 Java 21
-- 无需手动安装 Java 21，只需确保本地有 Java 17+ 即可运行 Gradle
-- 使用 `env JAVA_HOME=/path/to/java17 ./gradlew` 指定 Gradle 运行的 Java 版本
+版本号由 `build.gradle` 中的 `version` 字段统一管理，`plugin.xml` 不再包含 `<version>` 标签。
 
-### 版本更新
+## 核心架构
 
-插件版本现在由 `build.gradle` 统一管理:
-- `build.gradle` 中的 `version` 字段
-- `intellijPlatform.pluginConfiguration.version` 自动使用项目版本
-- `plugin.xml` 中的 `<version>` 标签已移除（由构建系统自动注入）
+插件通过两条路径更新标签编号，互为补充：
 
-## 开发注意事项
+### 路径一：EditorTabTitleProvider（被动）
 
-### IntelliJ API 使用模式
+`TabNumberEditorTabTitleProvider` 实现 `EditorTabTitleProvider` 接口，IntelliJ 在需要标签标题时调用 `getEditorTabTitle()`。查找策略：先在 `currentWindow` 中找文件索引，找不到则遍历所有窗口，选文件数最少的窗口（Split 后的新窗口通常文件较少）。
 
-1. **获取 EditorWindow**
-   - 使用 `FileEditorManagerEx.getInstanceEx(project).currentWindow`
-   - 必须处理 null 情况(窗口可能未初始化)
+### 路径二：事件监听器（主动）
 
-2. **标签页操作**
-   - 通过 `EditorWindow.tabbedPane?.tabs` 获取 `JBTabs`
-   - 使用 `getTabAt(index)` 获取 `TabInfo` 对象
-   - 使用 `TabInfo.setText()` 方法更新标签显示（2024.3+ API）
+`TabNumberStartupActivity`（`postStartupActivity`）在项目启动时：
+1. 创建 `TabNumberFileEditorManagerListener` 并注册到消息总线
+2. 同时订阅 `Before` 事件（文件打开前预刷新）
+3. 通过 `invokeLater` 主动刷新已打开标签
 
-3. **文件列表获取（API 变更）**
-   - ❌ 旧 API: `EditorWindow.files` (已废弃)
-   - ✅ 新 API: `EditorWindow.fileList` (2024.3+)
+`TabNumberFileEditorManagerListener` 监听文件打开/关闭/选择变化事件，在 `refreshTabNumber()` 中遍历 `fileEditorManagerEx.windows` 更新所有窗口。每个窗口独立维护一个 `TabsListener`（存储在 `windowListeners: ConcurrentHashMap`），处理标签移动、移除、选择变化等事件。
 
-4. **延迟初始化**
-   - `editorWindow` 和 `openedJBTabs` 使用 `lateinit` + `isInitialized` 检查
-   - 仅在第一次调用 `refreshTabNumber()` 时初始化
+### 标签标题生成
 
-### 多编辑器窗口支持
+`TabTitleUtils.generateTabTitle(index, file)` → `"{index+1}{separator}{fileName}"`，分隔符可在设置中自定义。
 
-实现方案:
-- `TabNumberFileEditorManagerListener` 遍历所有 `EditorWindow` 实例
-- 使用 `windowListeners: MutableMap<EditorWindow, TabsListener>` 为每个窗口维护独立监听器
-- `refreshTabNumber()` 方法调用 `fileEditorManagerEx.windows` 获取所有窗口并逐一更新
-- 支持分屏、多窗口等复杂场景，每个窗口独立编号
+### 设置持久化
 
-### plugin.xml 配置要点
+- `TabNumberSettingState`：`PersistentStateComponent`，存储于 `TabNumberPlugin.xml`
+- `TabNumberSettingConfigurable` + `TabNumberSettingComponent`：设置 UI（Editor 设置下）
+- 目前唯一可配置项：标签编号分隔符（默认 `". "`）
 
-- `since-build` 和 `version` 现在由 `build.gradle` 的 `intellijPlatform.pluginConfiguration` 块管理
-- `editorTabTitleProvider`: 标签标题的主要扩展点
-- `postStartupActivity`: 项目启动后执行的活动
-- `applicationConfigurable`: 应用级设置页面
-- `applicationService`: 应用级服务(设置状态)
+## 关键设计约束
 
-### IntelliJ Platform Gradle Plugin 2.x 配置
+### EDT 线程要求
 
-项目使用最新的 IntelliJ Platform Gradle Plugin 2.x（替代旧的 1.x）:
+所有 UI 操作必须在 EDT 中执行。`refreshTabNumber()` 内部已做检查，非 EDT 调用会通过 `invokeLater` 自动切换。新增刷新调用时注意这一点。
 
-1. **插件声明**
-   ```groovy
-   plugins {
-       id 'org.jetbrains.intellij.platform' version '2.9.0'
-   }
-   ```
+### 监听器管理
 
-2. **仓库配置**
-   ```groovy
-   repositories {
-       mavenCentral()
-       intellijPlatform {
-           defaultRepositories()
-       }
-   }
-   ```
+- 使用 `windowListeners.containsKey(window)` 防止对同一窗口重复注册 `TabsListener`
+- `cleanupDisposedWindows()` 在每次刷新时清理已销毁窗口的引用
+- Listener 注册为项目的 `Disposable` 子对象，项目关闭时自动清理
 
-3. **依赖声明**
-   ```groovy
-   dependencies {
-       intellijPlatform {
-           create('IC', '2024.3')  // IntelliJ IDEA Community Edition
-           bundledPlugins('com.intellij.java')  // 捆绑插件
-           instrumentationTools()  // 代码插桩工具
-       }
-   }
-   ```
+### 防抖机制
 
-4. **插件配置**
-   ```groovy
-   intellijPlatform {
-       pluginConfiguration {
-           version = project.version
-           ideaVersion {
-               sinceBuild = '243'
-               untilBuild = provider { null }
-           }
-       }
-   }
-   ```
+`fileOpened` 中使用 50ms 防抖间隔 + `invokeLater` 延迟刷新，应对 Split Right 等异步窗口创建操作，减少闪烁。
 
-5. **Toolchain 配置**
-   - `settings.gradle` 中配置 Foojay Toolchain Resolver
-   - `kotlin.jvmToolchain(21)` 指定 JVM 版本
-   - Gradle 自动下载所需的 JDK
+### IntelliJ 2024.3+ API
 
-## 已修复的问题
-
-### Issue #2 & #4 修复 (v1.1.0)
-- **问题**: 标签切换后编号消失；IDE 重启后标签无编号
-- **根因**:
-  - 缓存的 EditorWindow 引用在窗口切换后失效
-  - 启动时已存在的标签不触发 `fileOpened` 事件
-- **解决方案**:
-  - 移除单一窗口缓存，改为遍历所有窗口
-  - `TabNumberStartupActivity` 中主动调用初始刷新
-  - 支持多窗口/分屏场景
-
-### IntelliJ Platform 2024.3+ 适配 (v1.2.0)
-- **API 更新**:
-  - `EditorWindow.files` → `EditorWindow.fileList`
-  - `TabInfo.text = value` → `TabInfo.setText(value)`
-- **构建系统升级**:
-  - IntelliJ Platform Gradle Plugin 1.x → 2.9.0
-  - Kotlin 1.3 → 2.0.21
-  - JVM Target 11 → 21
-
-## 常见陷阱
-
-1. **EDT 线程要求**
-   - 所有 UI 操作必须在 EDT (Event Dispatch Thread) 中执行
-   - 使用 `ApplicationManager.getApplication().invokeLater {}` 切换到 EDT
-   - 非 EDT 线程直接操作 UI 会导致异常或不可预测的行为
-
-2. **监听器重复注册**
-   - 使用 `windowListeners.containsKey(window)` 检查避免重复添加 `TabsListener`
-   - 重复注册会导致多次回调和性能问题
-
-3. **Null 安全**
-   - `currentWindow`, `tabbedPane`, `getTabAt()` 都可能返回 null
-   - 必须使用 null 检查或安全调用操作符 `?.`
-
-4. **API 版本兼容**
-   - 2024.3+ 使用 `fileList` 和 `setText()`
-   - 检查 `since-build` 确保 API 可用性
+- 文件列表：`EditorWindow.fileList`（非已废弃的 `.files`）
+- 标签文本：`TabInfo.setText(value)`（非直接赋值 `.text = value`）
+- `since-build` 设为 `243`，不设 `untilBuild` 上限
 
 ## 调试技巧
 
-- 使用 `Logger.getInstance("TabNumber")` 记录日志
-- 通过 `runIde` 任务启动的 IDE 可以在原 IDE 中断点调试
-- 检查 `EditorWindow.fileList` 列表顺序确认标签索引
-- 使用 `ApplicationManager.getApplication().isDispatchThread` 验证 EDT 线程
-- 在 `refreshWindowTabNumbers()` 中添加断点观察窗口和标签更新流程
+- Logger 标签为 `"TabNumber"`，使用 `Logger.getInstance("TabNumber")`
+- `runIde` 启动的 IDE 可在原 IDE 中设置断点调试
+- 在 `refreshWindowTabNumbers()` 中设断点观察窗口和标签更新流程
+- 用 `ApplicationManager.getApplication().isDispatchThread` 验证是否在 EDT 线程
