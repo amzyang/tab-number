@@ -62,11 +62,14 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
     }
 
     fun refreshTabNumber() {
+        if (project.isDisposed) return
+
         // 确保在 EDT 线程中执行
         if (!ApplicationManager.getApplication().isDispatchThread) {
-            ApplicationManager.getApplication().invokeLater {
-                refreshTabNumber()
-            }
+            ApplicationManager.getApplication().invokeLater(
+                { refreshTabNumber() },
+                { project.isDisposed },
+            )
             return
         }
 
@@ -77,21 +80,8 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
             // 清理已失效的窗口监听器
             cleanupDisposedWindows()
 
-            // 遍历所有编辑器窗口
-            val windows = fileEditorManagerEx.windows
-
-            // 检测新窗口并立即为其设置监听器
-            // 这对于 Split Right 等操作很重要，因为它们可能不触发 fileOpened
-            for (window in windows) {
-                if (!windowListeners.containsKey(window) && !window.isDisposed) {
-                    // 发现新窗口，立即为其添加监听器和刷新标签
-                    log.info("Detected new editor window, adding listener")
-                    refreshWindowTabNumbers(window)
-                }
-            }
-
-            // 刷新所有窗口的标签
-            for (window in windows) {
+            // 遍历所有编辑器窗口，刷新标签（refreshWindowTabNumbers 内部会处理新窗口的 listener 注册）
+            for (window in fileEditorManagerEx.windows) {
                 refreshWindowTabNumbers(window)
             }
         } catch (e: Exception) {
@@ -123,7 +113,7 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
                 file: VirtualFile,
             ) {
                 // 文件打开前预刷新，确保窗口监听器已设置
-                log.info("Before file opened: ${file.name}")
+                log.debug("Before file opened: ${file.name}")
 
                 // 立即刷新，为新标签准备环境
                 refreshTabNumber()
@@ -156,13 +146,8 @@ class TabNumberFileEditorManagerListener(private val project: Project) :
                             newSelection: TabInfo?,
                         ) {
                             super.selectionChanged(oldSelection, newSelection)
-                            // 选择变化可能伴随窗口切换，刷新所有窗口
-                            ApplicationManager.getApplication().invokeLater(
-                                {
-                                    refreshTabNumber()
-                                },
-                                { project.isDisposed },
-                            )
+                            // 选择变化仅需刷新当前窗口
+                            refreshWindowTabNumbers(window)
                         }
 
                         override fun tabRemoved(tabToRemove: TabInfo) {
